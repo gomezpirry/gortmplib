@@ -504,6 +504,21 @@ func (c *Client) initialize3() error {
 			return err
 		}
 
+		// Some RTMP servers (e.g. NGINX-RTMP) only begin streaming after they
+		// receive a getStreamLength command following play. The server replies
+		// with "_error" / "onStatus" (CommandID=4), which waitOnStatus ignores
+		// because it is looking for CommandID=3 or CommandID=0.
+		_ = c.mrw.Write(&message.CommandAMF0{
+			ChunkStreamID:   4,
+			MessageStreamID: 0x1000000,
+			Name:            "getStreamLength",
+			CommandID:       4,
+			Arguments: []any{
+				nil,
+				streamKey,
+			},
+		})
+
 		res, err = waitOnStatus(c.mrw, 3)
 		if err != nil {
 			return err
