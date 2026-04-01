@@ -3,6 +3,7 @@ package gortmplib
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -352,8 +353,10 @@ func (r *Reader) readTracks() (map[uint8]*Track, map[uint8]*Track, error) {
 	for {
 		msg, err := r.Conn.Read()
 		if err != nil {
+			log.Printf("[gortmplib] readTracks: read error %T: %v", msg, err)
 			return nil, nil, err
 		}
+		log.Printf("[gortmplib] readTracks: got %T", msg)
 
 		switch msg := msg.(type) {
 		case *message.Video:
@@ -363,7 +366,9 @@ func (r *Reader) readTracks() (map[uint8]*Track, map[uint8]*Track, error) {
 			}
 			curTime = msg.DTS
 
-			if msg.Type == message.VideoTypeConfig && videoTracks[0] == nil {
+			// Only process Config messages that carry actual codec data.
+			if msg.Type == message.VideoTypeConfig && videoTracks[0] == nil &&
+				(msg.AVCConfig != nil || msg.HEVCConfig != nil) {
 				switch msg.Codec {
 				case message.CodecH264:
 					videoTracks[0], err = h264TrackFromConfig(msg.AVCConfig)
@@ -572,6 +577,9 @@ func (r *Reader) OnDataH265(track *Track, cb OnDataH26xFunc) {
 		case *message.Video:
 			switch msg.Type {
 			case message.VideoTypeConfig:
+				if msg.HEVCConfig == nil {
+					return nil
+				}
 				vps := h265FindNALU(msg.HEVCConfig.NaluArrays, h265.NALUType_VPS_NUT)
 				sps := h265FindNALU(msg.HEVCConfig.NaluArrays, h265.NALUType_SPS_NUT)
 				pps := h265FindNALU(msg.HEVCConfig.NaluArrays, h265.NALUType_PPS_NUT)
@@ -589,6 +597,9 @@ func (r *Reader) OnDataH265(track *Track, cb OnDataH26xFunc) {
 				cb(msg.DTS+msg.PTSDelta, msg.DTS, au)
 
 			case message.VideoTypeAU:
+				if len(msg.AU) == 0 {
+					return nil
+				}
 				var au h264.AVCC
 				err := au.Unmarshal(msg.AU)
 				if err != nil {
@@ -638,6 +649,9 @@ func (r *Reader) OnDataH264(track *Track, cb OnDataH26xFunc) {
 		case *message.Video:
 			switch msg.Type {
 			case message.VideoTypeConfig:
+				if msg.AVCConfig == nil {
+					return nil
+				}
 				if msg.AVCConfig.NumOfSequenceParameterSets < 1 {
 					return fmt.Errorf("no SPS found")
 				}
@@ -653,13 +667,17 @@ func (r *Reader) OnDataH264(track *Track, cb OnDataH26xFunc) {
 				cb(msg.DTS+msg.PTSDelta, msg.DTS, au)
 
 			case message.VideoTypeAU:
+				if len(msg.AU) == 0 {
+					return nil
+				}
 				var au h264.AVCC
 				err := au.Unmarshal(msg.AU)
 				if err != nil {
 					if errors.Is(err, h264.ErrAVCCNoNALUs) {
 						return nil
 					}
-					return fmt.Errorf("unable to decode AVCC: %w", err)
+					log.Printf("[gortmplib] H264 AU unmarshal error (bodyLen=%d body=%x): %v — skipping", len(msg.AU), msg.AU, err)
+					return nil
 				}
 
 				cb(msg.DTS+msg.PTSDelta, msg.DTS, au)

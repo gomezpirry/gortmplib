@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	encryptedVersion = 3<<24 | 5<<16 | 1<<8 | 1
+	encryptedVersion    = 3<<24 | 5<<16 | 1<<8 | 1
+	flashPlayerVersion  = uint32(9)<<24 | uint32(0)<<16 | uint32(124)<<8 | uint32(2) // FP 9.0.124.2
 )
 
 func doClientEncrypted(rw io.ReadWriter) ([]byte, []byte, error) {
@@ -91,6 +92,88 @@ func doClientEncrypted(rw io.ReadWriter) ([]byte, []byte, error) {
 	return keyIn, keyOut, nil
 }
 
+// doClientComplex performs the "complex" plain handshake used by librtmp/ffmpeg.
+// C1 carries a non-zero FP version and an HMAC-SHA256 digest.
+// If the server responds with a complex S1 (non-zero version, valid HMAC),
+// C2 is also HMAC-derived; otherwise a plain C2 echo is used as fallback.
+func doClientComplex(rw io.ReadWriter) error {
+	var c0 C0S0
+	c0.Version = 3
+
+	err := c0.Write(rw)
+	if err != nil {
+		return err
+	}
+
+	// Generate a throw-away DH key pair so fill() can embed a valid public key.
+	// We do NOT use the shared secret because we are not doing RTMPE encryption.
+	_, localPublicKey, err := dhGenerateKeyPair()
+	if err != nil {
+		return err
+	}
+
+	var c1 C1S1
+	c1.Version = flashPlayerVersion
+
+	c1Digest, err := c1.fill(false, localPublicKey)
+	if err != nil {
+		return err
+	}
+	_ = c1Digest
+
+	err = c1.Write(rw)
+	if err != nil {
+		return err
+	}
+
+	var s0 C0S0
+
+	err = s0.Read(rw)
+	if err != nil {
+		return err
+	}
+
+	if s0.Version != 3 {
+		return fmt.Errorf("server replied with unexpected version %d", s0.Version)
+	}
+
+	var s1 C1S1
+
+	err = s1.Read(rw)
+	if err != nil {
+		return err
+	}
+
+	var s2 C2S2
+
+	err = s2.Read(rw)
+	if err != nil {
+		return err
+	}
+
+	var c2 C2S2
+
+	if s1.Version != 0 {
+		// Server signals complex handshake: try to get S1 HMAC digest for C2.
+		// We only need the digest — not the DH public key — so use validateDigest
+		// directly instead of validate() which also checks dhValidatePublicKey.
+		s1Digest, _, errV := s1.validateDigest(true)
+		if errV == nil {
+			err = c2.fill(false, s1Digest)
+			if err != nil {
+				return err
+			}
+		} else {
+			// HMAC digest validation failed — fall back to simple C2 echo.
+			c2.Data = s1.Data
+		}
+	} else {
+		c2.Data = s1.Data
+	}
+
+	return c2.Write(rw)
+}
+
 func doClientPlain(rw io.ReadWriter, strict bool) error {
 	var c0 C0S0
 
@@ -154,7 +237,9 @@ func DoClient(rw io.ReadWriter, encrypted bool, strict bool) ([]byte, []byte, er
 	if encrypted {
 		return doClientEncrypted(rw)
 	}
-	return nil, nil, doClientPlain(rw, strict)
+	// Use the complex handshake (librtmp/ffmpeg-compatible) by default.
+	// Falls back to simple C2 if the server does not send a complex S1.
+	return nil, nil, doClientComplex(rw)
 }
 
 func doServerEncrypted(rw io.ReadWriter) ([]byte, []byte, error) {

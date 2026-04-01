@@ -71,6 +71,11 @@ func (m *Audio) unmarshal(raw *rawmessage.Message) error {
 	m.DTS = raw.Timestamp
 	m.MessageStreamID = raw.MessageStreamID
 
+	if len(raw.Body) == 0 {
+		// 0-byte audio message: an empty marker/heartbeat — no fields to parse.
+		return nil
+	}
+
 	if len(raw.Body) < 2 {
 		return fmt.Errorf("invalid body size")
 	}

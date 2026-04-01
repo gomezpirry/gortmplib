@@ -50,11 +50,12 @@ func (m *Video) unmarshal(raw *rawmessage.Message) error {
 	m.DTS = raw.Timestamp
 	m.MessageStreamID = raw.MessageStreamID
 
-	if len(raw.Body) < 5 {
+	if len(raw.Body) < 2 {
 		return fmt.Errorf("invalid body size")
 	}
 
-	m.IsKeyFrame = (raw.Body[0] >> 4) == 1
+	frameType := raw.Body[0] >> 4
+	m.IsKeyFrame = frameType == 1
 
 	m.Codec = raw.Body[0] & 0x0F
 	switch m.Codec {
@@ -70,6 +71,16 @@ func (m *Video) unmarshal(raw *rawmessage.Message) error {
 		return fmt.Errorf("unsupported video message type: %d", m.Type)
 	}
 
+	// FrameType 5 is "video info/command frame" — these are 2-byte control signals
+	// (e.g. start-of-sequence markers) sent by some servers before real video data.
+	// EOS messages also may be only 2 bytes. Skip PTS-delta and body parsing for both.
+	if m.Type == VideoTypeEOS || frameType == 5 {
+		return nil
+	}
+
+	if len(raw.Body) < 5 {
+		return fmt.Errorf("invalid body size")
+	}
 	m.PTSDelta = time.Duration(uint32(raw.Body[2])<<16|uint32(raw.Body[3])<<8|uint32(raw.Body[4])) * time.Millisecond
 
 	switch m.Type {
