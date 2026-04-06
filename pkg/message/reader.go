@@ -55,7 +55,7 @@ func allocateMessage(raw *rawmessage.Message) (Message, error) {
 			return &UserControlPingResponse{}, nil
 
 		default:
-			return nil, fmt.Errorf("invalid user control type: %v", userControlType)
+			return &UserControlUnknown{}, nil
 		}
 
 	case TypeCommandAMF0:
