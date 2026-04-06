@@ -481,6 +481,7 @@ func (r *Reader) readTracks() (map[uint8]*Track, map[uint8]*Track, error) {
 					return nil, nil, err
 				}
 			}
+
 		}
 
 		if (curTime - startTime) >= analyzePeriod {

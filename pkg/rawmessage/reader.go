@@ -322,6 +322,12 @@ func (r *Reader) Read() (*Message, error) {
 			if errors.Is(err, errMoreChunksNeeded) {
 				continue
 			}
+			// Normalize mid-chunk EOF (server closed connection abruptly) to plain EOF
+			// so callers see a consistent error regardless of where in the chunk the
+			// connection dropped.
+			if errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil, io.EOF
+			}
 			return nil, err
 		}
 
