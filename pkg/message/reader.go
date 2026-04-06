@@ -162,13 +162,11 @@ func (r *Reader) Read() (Message, error) {
 
 	msg, err := allocateMessage(raw)
 	if err != nil {
-		fmt.Printf("[message.Reader] allocate error for type=%d bodyLen=%d: %v\n", raw.Type, len(raw.Body), err)
 		return nil, err
 	}
 
 	err = msg.unmarshal(raw)
 	if err != nil {
-		fmt.Printf("[message.Reader] unmarshal error for type=%d bodyLen=%d body=%x: %v\n", raw.Type, len(raw.Body), raw.Body, err)
 		return nil, err
 	}
 

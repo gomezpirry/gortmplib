@@ -10,7 +10,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"strings"
@@ -130,11 +129,8 @@ func readCommandResult(
 	for {
 		msg, err := mrw.Read()
 		if err != nil {
-			log.Printf("[gortmplib] readCommandResult(%d): read error: %v", commandID, err)
 			return nil, err
 		}
-
-		log.Printf("[gortmplib] readCommandResult(%d): got %T %+v", commandID, msg, msg)
 
 		if cmd, ok := msg.(*message.CommandAMF0); ok {
 			if cmd.CommandID == commandID || (cmd.CommandID == 0) &&
@@ -152,11 +148,8 @@ func waitOnStatus(
 	for {
 		msg, err := mrw.Read()
 		if err != nil {
-			log.Printf("[gortmplib] waitOnStatus(%d): read error: %v", commandID, err)
 			return nil, err
 		}
-
-		log.Printf("[gortmplib] waitOnStatus(%d): received %T: %+v", commandID, msg, msg)
 
 		if cmd, ok := msg.(*message.CommandAMF0); ok {
 			if cmd.CommandID == commandID || (cmd.CommandID == 0 &&
@@ -288,15 +281,12 @@ func (c *Client) initialize2(ctx context.Context) error {
 }
 
 func (c *Client) initialize3() error {
-	log.Printf("[gortmplib] initialize3: start, url=%s", c.URL)
 	c.bc = bytecounter.NewReadWriter(c.nconn)
 
 	_, _, err := handshake.DoClient(c.bc, false, false)
 	if err != nil {
-		log.Printf("[gortmplib] initialize3: handshake failed: %v", err)
 		return err
 	}
-	log.Printf("[gortmplib] initialize3: handshake OK")
 
 	c.mrw = message.NewReadWriter(c.bc, c.bc, false)
 
@@ -383,13 +373,10 @@ func (c *Client) initialize3() error {
 		return err
 	}
 
-	log.Printf("[gortmplib] initialize3: waiting for connect result")
 	res, err := readCommandResult(c.mrw, 1)
 	if err != nil {
-		log.Printf("[gortmplib] initialize3: connect result error: %v", err)
 		return err
 	}
-	log.Printf("[gortmplib] initialize3: connect result: %s %+v", res.Name, res.Arguments)
 
 	switch res.Name {
 	case "_result":
@@ -459,13 +446,10 @@ func (c *Client) initialize3() error {
 			return err
 		}
 
-		log.Printf("[gortmplib] initialize3: waiting for createStream result")
 		res, err = readCommandResult(c.mrw, 2)
 		if err != nil {
-			log.Printf("[gortmplib] initialize3: createStream result error: %v", err)
 			return err
 		}
-		log.Printf("[gortmplib] initialize3: createStream result: %s %+v", res.Name, res.Arguments)
 
 		if res.Name != "_result" || !resultIsOK2(res) {
 			return fmt.Errorf("bad result: %v", res)
@@ -496,8 +480,7 @@ func (c *Client) initialize3() error {
 		// receive a getStreamLength command following play. The server replies
 		// with "_error" / "onStatus" (CommandID=4), which waitOnStatus ignores
 		// because it is looking for CommandID=3 or CommandID=0.
-		log.Printf("[gortmplib] sending getStreamLength for streamKey=%q", streamKey)
-		gslErr := c.mrw.Write(&message.CommandAMF0{
+		c.mrw.Write(&message.CommandAMF0{ //nolint:errcheck
 			ChunkStreamID:   4,
 			MessageStreamID: 0x1000000,
 			Name:            "getStreamLength",
@@ -507,7 +490,6 @@ func (c *Client) initialize3() error {
 				streamKey,
 			},
 		})
-		log.Printf("[gortmplib] getStreamLength write result: %v", gslErr)
 
 		res, err = waitOnStatus(c.mrw, 3)
 		if err != nil {

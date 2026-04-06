@@ -3,7 +3,6 @@ package gortmplib
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"time"
 
@@ -353,10 +352,8 @@ func (r *Reader) readTracks() (map[uint8]*Track, map[uint8]*Track, error) {
 	for {
 		msg, err := r.Conn.Read()
 		if err != nil {
-			log.Printf("[gortmplib] readTracks: read error %T: %v", msg, err)
 			return nil, nil, err
 		}
-		log.Printf("[gortmplib] readTracks: got %T", msg)
 
 		switch msg := msg.(type) {
 		case *message.Video:
@@ -677,7 +674,6 @@ func (r *Reader) OnDataH264(track *Track, cb OnDataH26xFunc) {
 					if errors.Is(err, h264.ErrAVCCNoNALUs) {
 						return nil
 					}
-					log.Printf("[gortmplib] H264 AU unmarshal error (bodyLen=%d body=%x): %v — skipping", len(msg.AU), msg.AU, err)
 					return nil
 				}
 
