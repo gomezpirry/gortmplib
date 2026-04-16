@@ -132,7 +132,7 @@ func audioTrackFromData(msg *message.Audio) (*Track, error) {
 		}}, nil
 
 	default:
-		panic("should not happen")
+		return nil, fmt.Errorf("unsupported audio codec: %d", msg.Codec)
 	}
 }
 
@@ -176,7 +176,7 @@ func videoTrackFromSequenceStart(msg *message.VideoExSequenceStart) (*Track, err
 		}}, nil
 
 	default:
-		panic("should not happen")
+		return nil, fmt.Errorf("unsupported video FourCC: %v", msg.FourCC)
 	}
 }
 
@@ -234,7 +234,7 @@ func audioTrackFromExtendedMessages(
 		return &Track{Codec: &codecs.MPEG1Audio{}}, nil
 
 	default:
-		panic("should not happen")
+		return nil, fmt.Errorf("unsupported audio FourCC: %v", frames.FourCC)
 	}
 }
 
@@ -425,6 +425,11 @@ func (r *Reader) readTracks() (map[uint8]*Track, map[uint8]*Track, error) {
 			}
 
 		case *message.Audio:
+			if msg.Codec == 0 {
+				// 0-byte heartbeat message with no codec info; skip track detection.
+				break
+			}
+
 			if !firstReceived {
 				firstReceived = true
 				startTime = msg.DTS
